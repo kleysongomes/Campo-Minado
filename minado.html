@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Campo Minado</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to bottom, #e0f7fa, #ffffff);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      color: #00796b;
+      margin-bottom: 5px;
+    }
+
+    #stats {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      font-size: 16px;
+      margin-bottom: 10px;
+      color: #333;
+      flex-wrap: wrap;
+    }
+
+    #game {
+      display: grid;
+      grid-template-columns: repeat(10, 32px);
+      gap: 2px;
+      margin-bottom: 15px;
+    }
+
+    .cell {
+      width: 32px;
+      height: 32px;
+      background: #90caf9;
+      border-radius: 6px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 15px;
+      color: #0d47a1;
+      user-select: none;
+      box-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+    }
+
+    .cell.revealed {
+      background: #e1f5fe;
+      cursor: default;
+      box-shadow: inset 1px 1px 2px rgba(0,0,0,0.1);
+    }
+
+    .cell.mine {
+      background: #ef9a9a;
+    }
+
+    .cell.flag {
+      background: #fff59d;
+    }
+
+    .cell.hint {
+      border: 2px solid green;
+    }
+
+    button {
+      margin: 4px;
+      padding: 8px 14px;
+      font-size: 15px;
+      border: none;
+      border-radius: 8px;
+      background-color: #00796b;
+      color: white;
+      cursor: pointer;
+      box-shadow: 1px 2px 4px rgba(0,0,0,0.3);
+    }
+
+    button:disabled {
+      background: #ccc;
+      color: #777;
+      cursor: default;
+    }
+
+    #helpers {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    #logContainer {
+      width: 90%;
+      max-width: 400px;
+      background: #f9fbe7;
+      padding: 10px;
+      margin-top: 10px;
+      border-radius: 8px;
+      box-shadow: inset 0 0 4px rgba(0,0,0,0.1);
+      font-size: 14px;
+      color: #444;
+    }
+
+    #log {
+      max-height: 150px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>⛏️ Campo Minado</h1>
+  <div id="stats">
+    <div>⏱️ Tempo: <span id="timer">0</span>s</div>
+    <div>🏆 Vitórias: <span id="wins">0</span></div>
+    <div>💥 Derrotas: <span id="losses">0</span></div>
+    <div>🎯 Pontuação: <span id="score">0</span></div>
+    <div>⭐ Total da Sessão: <span id="totalScore">0</span></div>
+  </div>
+  <div id="game"></div>
+  <button onclick="init()">🔄 Reiniciar</button>
+
+  <div id="helpers">
+    <button id="btnStartHint" onclick="hintStart()">📍 Por onde começar?</button>
+    <button id="btnRevealMine" onclick="revealOneMine()">💣 Revelar uma mina</button>
+    <button id="btnRevive" onclick="useRevive()">❤️ Ressuscitar</button>
+  </div>
+
+  <div id="logContainer">
+    <h3>📜 Registro de Ações</h3>
+    <div id="log"></div>
+  </div>
+
+  <script>
+    const size = 10;
+    const minesCount = 15;
+    let board = [], revealed = [], flags = 0;
+    let wins = 0, losses = 0, score = 0, totalScore = 0;
+    let gameOver = false, reviveUsed = false;
+    let timer = 0, timerInterval;
+    let startHintUsed = false, revealMineUsed = false;
+
+    const game = document.getElementById('game');
+    const timerEl = document.getElementById('timer');
+    const winsEl = document.getElementById('wins');
+    const lossesEl = document.getElementById('losses');
+    const scoreEl = document.getElementById('score');
+    const totalScoreEl = document.getElementById('totalScore');
+
+    function init() {
+      game.innerHTML = '';
+      gameOver = false;
+      flags = 0;
+      score = 0;
+      timer = 0;
+      reviveUsed = false;
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        timer++;
+        timerEl.textContent = timer;
+      }, 1000);
+
+      updateStats();
+      logAction("🔄 Jogo reiniciado.");
+
+      board = Array(size).fill().map(() => Array(size).fill(0));
+      revealed = Array(size).fill().map(() => Array(size).fill(false));
+
+      let placed = 0;
+      while (placed < minesCount) {
+        let x = Math.floor(Math.random() * size);
+        let y = Math.floor(Math.random() * size);
+        if (board[y][x] !== 'M') {
+          board[y][x] = 'M';
+          placed++;
+        }
+      }
+
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          if (board[y][x] === 'M') continue;
+          let count = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const ny = y + dy, nx = x + dx;
+              if (ny >= 0 && ny < size && nx >= 0 && nx < size && board[ny][nx] === 'M') {
+                count++;
+              }
+            }
+          }
+          board[y][x] = count;
+        }
+      }
+
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const cell = document.createElement('div');
+          cell.classList.add('cell');
+          cell.dataset.x = x;
+          cell.dataset.y = y;
+          cell.oncontextmenu = (e) => {
+            e.preventDefault();
+          };
+          cell.onclick = () => {
+            if (!gameOver) reveal(x, y);
+          };
+          game.appendChild(cell);
+        }
+      }
+
+      document.getElementById('btnStartHint').disabled = startHintUsed;
+      document.getElementById('btnRevealMine').disabled = revealMineUsed;
+      document.getElementById('btnRevive').disabled = false;
+    }
+
+    function updateStats() {
+      winsEl.textContent = wins;
+      lossesEl.textContent = losses;
+      scoreEl.textContent = score;
+      totalScoreEl.textContent = totalScore;
+    }
+
+    function reveal(x, y) {
+      if (revealed[y][x] || gameOver) return;
+      const cell = getCell(x, y);
+      cell.classList.remove('hint');
+      revealed[y][x] = true;
+      cell.classList.add('revealed');
+
+      if (board[y][x] === 'M') {
+        if (!reviveUsed) {
+          reviveUsed = true;
+          document.getElementById('btnRevive').disabled = true;
+          logAction(`💥 Explodiu uma mina, mas usou vida extra!`);
+          alert("💥 Você explodiu uma mina, mas usou sua vida extra!");
+          return;
+        } else {
+          cell.classList.add('mine');
+          cell.textContent = '💣';
+          losses++;
+          gameOver = true;
+          clearInterval(timerInterval);
+          revealAll();
+          logAction(`☠️ Explodiu uma mina e perdeu!`);
+          alert("💀 Você perdeu!");
+          updateStats();
+          return;
+        }
+      }
+
+      score++;
+      totalScore++;
+      updateStats();
+      logAction(`Clique em (${x}, ${y}) → ${board[y][x] || 'vazio'} | +1 ponto`);
+
+      if (board[y][x] > 0) {
+        cell.textContent = board[y][x];
+      } else {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const ny = y + dy, nx = x + dx;
+            if (ny >= 0 && ny < size && nx >= 0 && nx < size) {
+              reveal(nx, ny);
+            }
+          }
+        }
+      }
+
+      checkVictory();
+    }
+
+    function getCell(x, y) {
+      return document.querySelector(`.cell[data-x='${x}'][data-y='${y}']`);
+    }
+
+    function revealAll() {
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const cell = getCell(x, y);
+          if (board[y][x] === 'M') {
+            cell.classList.add('revealed', 'mine');
+            cell.textContent = '💣';
+          } else if (!revealed[y][x]) {
+            cell.classList.add('revealed');
+            if (board[y][x] > 0) {
+              cell.textContent = board[y][x];
+            }
+          }
+        }
+      }
+    }
+
+    function checkVictory() {
+      let unrevealed = 0;
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          if (!revealed[y][x]) unrevealed++;
+        }
+      }
+
+      if (unrevealed === minesCount) {
+        wins++;
+        gameOver = true;
+        clearInterval(timerInterval);
+        revealAll();
+        logAction("🎉 Vitória!");
+        alert("🎉 Vitória!");
+        updateStats();
+      }
+    }
+
+    function hintStart() {
+      if (startHintUsed) return;
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          if (!revealed[y][x] && board[y][x] !== 'M') {
+            getCell(x, y).classList.add('hint');
+            startHintUsed = true;
+            document.getElementById('btnStartHint').disabled = true;
+            logAction("📍 Usou dica: por onde começar.");
+            return;
+          }
+        }
+      }
+    }
+
+    function revealOneMine() {
+      if (revealMineUsed) return;
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          if (board[y][x] === 'M') {
+            const cell = getCell(x, y);
+            cell.classList.add('revealed', 'mine');
+            cell.textContent = '💣';
+            revealMineUsed = true;
+            document.getElementById('btnRevealMine').disabled = true;
+            logAction("💣 Usou ajuda: revelou uma mina.");
+            return;
+          }
+        }
+      }
+    }
+
+    function useRevive() {
+      reviveUsed = false;
+      document.getElementById('btnRevive').disabled = true;
+      logAction("❤️ Ativou proteção contra a próxima mina.");
+      alert("❤️ Você está protegido contra a próxima mina!");
+    }
+
+    function logAction(text) {
+      const log = document.getElementById('log');
+      const timestamp = new Date().toLocaleTimeString();
+      log.innerText += `[${timestamp}] ${text}\n`;
+      log.scrollTop = log.scrollHeight;
+    }
+
+    init();
+  </script>
+</body>
+</html>
